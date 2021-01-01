@@ -1,0 +1,229 @@
+#include <LiquidCrystal_I2C.h>
+
+#include <Arduino.h>
+
+#include <TM1637Display.h>
+
+#include <Keypad.h>
+
+#include <Wire.h>
+
+#include "pitches.h"
+
+#define CLK 22
+
+#define DIO 23
+
+TM1637Display display(CLK, DIO);
+int buttons [] = {3, 5, 7, 9};
+int leds [] = {2, 4, 6, 8};
+int ledTone [] = {NOTE_A4, NOTE_E3, NOTE_CS4, NOTE_E4};
+String ledScreen [] = {"Red", "Green", "Yellow", "Blue"}; 
+int sequence [100];
+int largestIndex = 0;
+int startTone [] = {NOTE_C4, NOTE_F4, NOTE_C4, NOTE_F4, NOTE_C4, NOTE_F4, NOTE_C4, NOTE_F4, NOTE_G4, NOTE_F4, NOTE_E4, NOTE_F4, NOTE_G4};
+int startToneDuration [] = {100, 200, 100, 200, 100, 400, 100, 100, 100, 100, 200, 100, 500};
+int playNote[] = {NOTE_C4, NOTE_C4, NOTE_G4, NOTE_C5, NOTE_G4, NOTE_C5};
+int playNoteDuration[] = {100, 100, 100, 300, 100, 300};
+int buttonState = 0;
+int successTone [] = {NOTE_F5, NOTE_F5};
+int successToneDuration [] = {250, 2000};
+int failTone [] = {NOTE_F5, NOTE_C5, NOTE_D5, NOTE_C5};
+int failToneDuration [] = {1000, 500, 500, 500}; 
+
+const int START = 0;
+const int PLAY = 1;
+const int GAMEOVER = 2;
+
+int gameState;
+
+long currentMillies = 0, previousMillies = 0;
+
+LiquidCrystal_I2C lcd(0x3F,16,2);
+
+void setup()
+{
+  lcd.init();
+ lcd.backlight();
+ 
+  
+  for(int pin=0; pin<4; pin++)
+  {
+    pinMode(leds[pin], OUTPUT);
+  }
+  
+  for(int pin=0; pin<4; pin++)
+  {
+    pinMode(buttons[pin], INPUT);
+  }
+  
+  Serial.begin(9600);
+
+  gameState = START;
+  randomSeed(analogRead(40));
+
+}
+
+void allOff()
+{
+  for(int pin = 0; pin < 4; pin++)
+  {
+    digitalWrite(leds[pin], LOW);
+    
+  }
+}
+
+void allOn()
+{
+  for(int pin = 0; pin < 4; pin++)
+    digitalWrite(leds[pin], HIGH);
+}
+    
+
+void loop()
+{
+  if(gameState == START)
+  {
+    lcd.setCursor(0,0);
+    lcd.print("Press a button");
+    lcd.setCursor(0,1);
+    lcd.print("to start");
+    allOn();
+    delay(1000);
+    allOff();
+    
+    for (int thisNote = 0; thisNote < 13; thisNote++)
+    {
+    
+      tone(11, startTone[thisNote], startToneDuration[thisNote]);
+      int pauseBetweenNotes = startToneDuration[thisNote] * 1.30;
+      delay(pauseBetweenNotes);
+      noTone(11);
+    }
+    for(int thisNote = 0; thisNote < 6; thisNote++)
+    {
+      tone(11, playNote[thisNote], playNoteDuration[thisNote]);
+      int pauseBetweenNotes = startToneDuration[thisNote] * 1.30;
+      delay(pauseBetweenNotes);
+      noTone(11); 
+    }
+
+     while(gameState == START)
+      {
+        for (int pin = 0; pin < 4; pin++)
+          {
+             buttonState = digitalRead(buttons[pin]);
+             if(pin==3)
+              pin=0;
+             if(buttonState!=0)
+             {
+                gameState = PLAY;
+                Serial.println("Start");
+                lcd.clear();
+                lcd.setCursor(0,0);
+                lcd.print("Good luck!  :)");
+                delay(1500);
+                lcd.setCursor(0,1);
+                lcd.print("you'll need it...");
+                delay(3000);
+                lcd.clear();
+                break;
+             }
+          }
+      }
+   
+  }
+  else if(gameState == PLAY)
+  {
+    sequence[largestIndex] = random(0,4);
+    Serial.println("Next out"); 
+    Serial.println(sequence[largestIndex]); 
+    largestIndex++;
+  
+    for(int index=0; index < largestIndex; index++)
+    {
+      delay(300);
+      digitalWrite(leds[sequence[index]], HIGH);
+      tone(11,ledTone[sequence[index]], 700);
+      lcd.setCursor(0,0);
+      lcd.print(ledScreen[sequence[index]]);
+      delay(700);
+      digitalWrite(leds[sequence[index]], LOW);
+      noTone(11);
+      lcd.clear();
+    }
+    delay(500);
+    int positionPressed;
+    boolean madeMistake = false;
+    for(int index = 0; index < largestIndex && madeMistake == false; index++)
+    {
+      int currentMillis = millis();
+      int previousMillis = currentMillis;
+      boolean buttonBackUp = false;
+      while(currentMillis - previousMillis < 10000 && buttonBackUp == false)
+      {
+       
+        for( int pin = 0; pin < 4; pin++ )
+        {
+          if(digitalRead(buttons[pin]) == HIGH)
+          {
+            buttonBackUp = true;
+            positionPressed = pin;
+            digitalWrite(leds[pin], HIGH);
+            tone(11, ledTone[pin],700);
+            lcd.print(ledScreen[pin]);
+            delay(700);
+            digitalWrite(leds[pin], LOW);
+            noTone(11);
+            lcd.clear();
+          }
+          currentMillis = millis();
+        
+        }
+      }
+      if(positionPressed != sequence[index])
+      {
+        madeMistake = true;
+        lcd.setCursor(0,0);
+        lcd.print("Game over :( ");
+        for(int thisNote = 0; thisNote < 4; thisNote++)
+        {
+          tone(11, failTone[thisNote],failToneDuration[thisNote]);
+          int pauseBetweenNotes = failToneDuration[thisNote] * 0.80;
+          delay(pauseBetweenNotes);
+          noTone(11);
+        }
+        lcd.clear();
+        gameState = GAMEOVER;
+        
+      }
+      else if(index == largestIndex - 1)
+      {
+        for(int thisNote = 0; thisNote < 2; thisNote++)
+        {
+          tone(11, successTone[thisNote], 500);
+          int pauseBetweenNotes = 500 * 1.40;
+          delay(pauseBetweenNotes);
+          noTone(11);
+        }
+        lcd.setCursor(0,0);
+        lcd.print("Well done!");
+        delay(3000);
+        lcd.clear();
+      }
+    }
+    
+  }
+  else if( gameState == GAMEOVER )
+  {
+    largestIndex = 0;
+    allOn();
+    lcd.setCursor(0,0);
+    lcd.print(" Try again");
+    delay(2000);
+    allOff();
+    gameState = START;
+    lcd.clear();
+    
+  }
+}
